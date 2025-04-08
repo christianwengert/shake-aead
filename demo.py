@@ -141,8 +141,8 @@ if __name__ == '__main__':
     # ODWrap
     odwrap = ODWrap(key, nonce, ad)
     ciphertext, tag = odwrap.encrypt(plaintext)
-    print("Ciphertext:", ciphertext)
-    print("Tag:", tag)
+    print("Ciphertext:", ciphertext.hex())
+    print("Tag:", tag.hex())
 
     odwrap2 = ODWrap(key, nonce, ad)
     decrypted = odwrap2.decrypt(ciphertext, tag)
@@ -158,10 +158,10 @@ if __name__ == '__main__':
     c1, t1 = deck.wrap(msg1)
     c2, t2 = deck.wrap(msg2)
 
-    print("Message 1 Ciphertext:", c1)
-    print("Message 1 Tag:", t1)
-    print("Message 2 Ciphertext:", c2)
-    print("Message 2 Tag:", t2)
+    print("Message 1 Ciphertext:", c1.hex())
+    print("Message 1 Tag:", t1.hex())
+    print("Message 2 Ciphertext:", c2.hex())
+    print("Message 2 Tag:", t2.hex())
 
     # Resume session for decryption by using the same session ID
     deck_resume1 = DeckBO(key, sid=b'session_id', ad=ad)
