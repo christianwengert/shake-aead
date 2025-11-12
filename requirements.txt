@@ -1,1 +1,2 @@
+pytest
 cryptography~=44.0.2

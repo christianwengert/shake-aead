@@ -1,5 +1,6 @@
 import secrets
-
+import hmac
+ 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 import struct
@@ -18,6 +19,12 @@ class SHAKE256:
         self.digest.update(data)
 
     def squeeze(self, outlen: int) -> bytes:
+        """Return `outlen` bytes from the SHAKE XOF.
+        This finalises the current digest, returns the requested slice, and
+        re‑initialises the internal state for the next use. **Do not** call
+        `squeeze` without first absorbing new data – the XOF would then produce
+        the same deterministic output each time, leading to keystream reuse.
+        """
         output = self.digest.finalize()[:outlen]
         self._init_digest()  # Reset for next squeeze
         return output
@@ -32,7 +39,7 @@ class OD:
 
     def permute(self):
         shake = SHAKE256()
-        shake.absorb(self.state)
+        shake.absorb(bytes(self.state))
         self.state = bytearray(shake.squeeze(self.rate))
 
     def absorb(self, data: bytes):
@@ -70,24 +77,35 @@ class ODWrap:
         self.od.permute()
 
     def encrypt(self, plaintext: bytes, tag_len=16):
-        ciphertext = bytearray()
-        for b in plaintext:
-            keystream = self.od.squeeze(1)
-            c = b ^ keystream[0]
-            ciphertext.append(c)
-            self.od.overwrite(bytes([c]))
+        # ciphertext = bytearray(len(plaintext))
+        # for b in plaintext:
+        #     keystream = self.od.squeeze(1)
+        #     c = b ^ keystream[0]
+        #     ciphertext.append(c)
+        #     self.od.overwrite(bytes([c]))
+
+        keystream = self.od.squeeze(len(plaintext))
+        ciphertext = [b ^ k for b, k in zip(plaintext, keystream)]
+        self.od.overwrite(bytes(ciphertext))
+
         tag = self.od.squeeze(tag_len)
         return bytes(ciphertext), tag
 
     def decrypt(self, ciphertext: bytes, tag: bytes):
-        plaintext = bytearray()
-        for b in ciphertext:
-            keystream = self.od.squeeze(1)
-            p = b ^ keystream[0]
-            plaintext.append(p)
-            self.od.overwrite(bytes([b]))
+        # plaintext = bytearray()
+        # for b in ciphertext:
+        #     keystream = self.od.squeeze(1)
+        #     p = b ^ keystream[0]
+        #     plaintext.append(p)
+        #     self.od.overwrite(bytes([b]))
+
+        keystream = self.od.squeeze(len(ciphertext))
+        plaintext = [b ^ k for b, k in zip(ciphertext, keystream)]
+        self.od.overwrite(bytes(ciphertext))
+
         test_tag = self.od.squeeze(len(tag))
-        if test_tag != tag:
+        # Use constant‑time comparison to avoid timing attacks
+        if not hmac.compare_digest(test_tag, tag):
             raise ValueError("Invalid authentication tag")
         return bytes(plaintext)
 
@@ -124,14 +142,15 @@ class DeckBO:
             plaintext.append(p)
             self.od.overwrite(bytes([b]))
         test_tag = self.od.squeeze(len(tag))
-        if test_tag != tag:
+        # Use constant‑time comparison to avoid timing attacks
+        if not hmac.compare_digest(test_tag, tag):
             raise ValueError("Invalid authentication tag")
         return bytes(plaintext)
 
 
 # Example usage
 if __name__ == '__main__':
-    key = b'secretkey1234567'
+    key = b'cafecafecafecafecafecafecafecafe'
     nonce = secrets.token_bytes(32)  # that should be enough
     ad = b'associated_data' + b'01' * 100 + b'FF'
     plaintext = b'Hello, lets shake up authenticated encryption. This will kick aes-gcm\'s ass big time. Furthermore I just want to go on and on and on. Nevermind.'
@@ -143,6 +162,7 @@ if __name__ == '__main__':
     ciphertext, tag = odwrap.encrypt(plaintext)
     print("Ciphertext:", ciphertext.hex())
     print("Tag:", tag.hex())
+    print("AD:", ad)
 
     odwrap2 = ODWrap(key, nonce, ad)
     decrypted = odwrap2.decrypt(ciphertext, tag)
